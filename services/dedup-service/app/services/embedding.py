@@ -22,9 +22,15 @@ class EmbeddingService:
 
     def load_model(self) -> bool:
         """Loads sentence-transformers model if configured."""
-        if settings.EMBEDDING_MODE == "stub":
+        mode = settings.EMBEDDING_MODE.lower().strip()
+        if mode in ("stub", "dev", "test"):
             logger.info("Using stub embedding service (dev mode)")
             return True
+
+        if mode not in ("model", "production"):
+            raise ValueError(
+                f"Invalid EMBEDDING_MODE '{settings.EMBEDDING_MODE}'. Allowed: 'stub' or 'model'."
+            )
 
         try:
             from sentence_transformers import SentenceTransformer
@@ -39,22 +45,47 @@ class EmbeddingService:
         """
         Compute normalized 512-dim CLIP embedding.
         """
-        if settings.EMBEDDING_MODE == "stub" or self._model is None:
+        if not image_bytes:
+            raise ValueError("Empty image bytes provided for embedding computation")
+
+        mode = settings.EMBEDDING_MODE.lower().strip()
+        if mode in ("stub", "dev", "test"):
             return self._compute_stub_embedding(image_bytes)
+
+        if mode not in ("model", "production"):
+            raise ValueError(
+                f"Invalid EMBEDDING_MODE '{settings.EMBEDDING_MODE}'. Allowed: 'stub' or 'model'."
+            )
+
+        # In production model mode, require the real model and raise explicitly if missing/failed
+        if self._model is None:
+            if not self.load_model():
+                raise RuntimeError(
+                    f"Embedding mode is '{settings.EMBEDDING_MODE}' but model '{settings.CLIP_MODEL_NAME}' could not be loaded"
+                )
 
         try:
             from PIL import Image
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             # SentenceTransformer computes the image embeddings
-            emb = self._model.encode(image)
+            emb = np.asarray(self._model.encode(image), dtype=np.float32)
+
+            if not np.all(np.isfinite(emb)):
+                raise ValueError("Computed embedding contains NaN or Inf values")
+
+            if len(emb) != 512:
+                raise ValueError(f"Expected 512-dim embedding, got {len(emb)}")
+
             # L2 Normalize
-            norm = np.linalg.norm(emb)
-            if norm > 0:
-                emb = emb / norm
+            norm = float(np.linalg.norm(emb))
+            if norm <= 0 or not np.isfinite(norm):
+                raise ValueError("Embedding norm is zero or non-finite; cannot normalize")
+
+            emb = emb / norm
             return emb.tolist()
         except Exception as e:
-            logger.error(f"Embedding computation failed: {e}. Falling back to stub.")
-            return self._compute_stub_embedding(image_bytes)
+            logger.error(f"Embedding computation failed: {e}")
+            raise RuntimeError(f"Embedding computation failed: {e}") from e
 
     def _compute_stub_embedding(self, image_bytes: bytes) -> List[float]:
         """
@@ -68,9 +99,14 @@ class EmbeddingService:
 
         # Generate 512 numbers, then L2-normalize
         vec = rng.normal(size=512)
-        norm = np.linalg.norm(vec)
-        if norm > 0:
-            vec = vec / norm
+        if not np.all(np.isfinite(vec)):
+            raise ValueError("Stub embedding contains NaN or Inf values")
+
+        norm = float(np.linalg.norm(vec))
+        if norm <= 0 or not np.isfinite(norm):
+            raise ValueError("Stub norm is zero or non-finite; cannot normalize")
+
+        vec = vec / norm
         return vec.tolist()
 
 

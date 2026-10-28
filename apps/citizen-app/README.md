@@ -16,7 +16,7 @@ A React Native mobile application built with Expo, allowing citizens to capture 
 ## Fallback Design Strategy
 
 * **API Offline Fallback**: If the Ingestion API backend is down, the mobile app switches to local state caching, logging the complaint details in-memory, notifying the user that it registered offline, and adding it to the history list immediately so the UI remains interactive.
-* **GPS Simulator Fallback**: Falls back to mock Delhi center coordinates (`28.6139`, `77.2090`) with random offsets if running inside a browser or simulator where location queries are blocked.
+* **GPS & Location Strategy**: Uses real hardware GPS via `expo-location` and client-side EXIF GPS extraction for photos. If GPS is unavailable or permission denied, coordinates remain unresolved and the citizen can manually position the pin on the interactive OpenStreetMap map. Zero fake coordinates are ever fabricated.
 
 ## Quick Start
 

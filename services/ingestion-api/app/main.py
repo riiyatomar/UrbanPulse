@@ -5,8 +5,10 @@ Initializes and tears down:
 - Database connection pool
 - S3 storage client
 - Redis queue publisher
+- Bootstrap admin user (from env vars, first startup only)
 
 Mounts complaint routes under /api/v1.
+Mounts auth routes under /api/v1/auth.
 """
 
 import logging
@@ -18,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.models import HealthResponse
 from app.routes.complaints import router as complaints_router
+from app.routes.auth import router as auth_router
 
 # Configure logging
 logging.basicConfig(
@@ -28,12 +31,42 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _bootstrap_admin():
+    """
+    Create the initial administrator account from environment variables.
+    Only runs if BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD are set
+    and no administrator account exists yet.
+    """
+    if not settings.BOOTSTRAP_ADMIN_EMAIL or not settings.BOOTSTRAP_ADMIN_PASSWORD:
+        return
+
+    from app.auth import hash_password, validate_password_strength
+    from app.services.database import db_service
+
+    try:
+        validate_password_strength(settings.BOOTSTRAP_ADMIN_PASSWORD)
+    except ValueError as e:
+        logger.error(f"Bootstrap admin password too weak: {e}")
+        return
+
+    pw_hash = hash_password(settings.BOOTSTRAP_ADMIN_PASSWORD)
+    result = db_service.bootstrap_admin(
+        name=settings.BOOTSTRAP_ADMIN_NAME,
+        email=settings.BOOTSTRAP_ADMIN_EMAIL,
+        password_hash=pw_hash,
+    )
+    if result:
+        logger.info(f"Bootstrap administrator created: {result['email']}")
+    else:
+        logger.info("Bootstrap admin skipped (admin already exists or email taken)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Application lifespan manager.
 
-    Startup: connect to DB, S3, and Redis.
+    Startup: connect to DB, S3, and Redis. Bootstrap admin if configured.
     Shutdown: close all connections gracefully.
     """
     # --- Startup ---
@@ -61,6 +94,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Queue connection failed: {e}")
 
+    # Bootstrap admin from env (first startup only)
+    try:
+        _bootstrap_admin()
+    except Exception as e:
+        logger.warning(f"Bootstrap admin creation failed: {e}")
+
     logger.info("Ingestion API ready")
 
     yield
@@ -78,19 +117,22 @@ app = FastAPI(
     description=(
         "Receives civic infrastructure complaint images, applies privacy "
         "blurring, stores to S3, and queues detection jobs. Part of the "
-        "UrbanPulse computer-vision civic issue tracking system."
+        "UrbanPulse computer-vision civic issue tracking system. "
+        "Secured with JWT bearer authentication and RBAC."
     ),
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
 # Mount routes
 app.include_router(complaints_router)
+app.include_router(auth_router)
 
-# CORS — allow the admin dashboard and citizen-app to make API requests
+# CORS — configured via environment variable, not hardcoded
+cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:8081", "http://localhost:19006"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -99,5 +141,5 @@ app.add_middleware(
 
 @app.get("/health", response_model=HealthResponse, tags=["system"])
 async def health_check():
-    """Service health check endpoint."""
+    """Service health check endpoint. No authentication required."""
     return HealthResponse()

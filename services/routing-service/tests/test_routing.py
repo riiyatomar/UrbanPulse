@@ -43,3 +43,55 @@ def test_unknown_class_routing():
     routing_engine.load_rules()
     dept, contact = routing_engine.resolve_department("unknown_class", "ward_east", 5.0)
     assert dept == "Roads & Infrastructure"  # fallback default
+
+
+def test_process_routing_job_skips_rejected(mock_db, mock_queue):
+    """Verify routing job skips processing when complaint status is rejected."""
+    from unittest.mock import patch
+    from app.main import process_routing_job
+
+    mock_db.get_complaint.return_value = {
+        "id": "rejected-complaint-uuid",
+        "issue_class": "pothole",
+        "severity_score": 8.0,
+        "lat": 28.6139,
+        "lng": 77.2090,
+        "status": "rejected",
+    }
+
+    job = {"complaint_id": "rejected-complaint-uuid"}
+
+    with patch("app.main.routing_db", mock_db), \
+         patch("app.main.routing_queue", mock_queue):
+        process_routing_job(job)
+
+        mock_db.get_complaint.assert_called_once_with("rejected-complaint-uuid")
+        mock_db.assign_routing_details.assert_not_called()
+        mock_queue.publish_assigned_notification.assert_not_called()
+
+
+def test_process_routing_job_skips_under_review(mock_db, mock_queue):
+    """Verify routing job skips processing when complaint status is under_review."""
+    from unittest.mock import patch
+    from app.main import process_routing_job
+
+    mock_db.get_complaint.return_value = {
+        "id": "review-complaint-uuid",
+        "issue_class": "pothole",
+        "severity_score": 8.0,
+        "lat": 28.6139,
+        "lng": 77.2090,
+        "status": "under_review",
+    }
+
+    job = {"complaint_id": "review-complaint-uuid"}
+
+    with patch("app.main.routing_db", mock_db), \
+         patch("app.main.routing_queue", mock_queue):
+        process_routing_job(job)
+
+        mock_db.get_complaint.assert_called_once_with("review-complaint-uuid")
+        mock_db.assign_routing_details.assert_not_called()
+        mock_queue.publish_assigned_notification.assert_not_called()
+
+

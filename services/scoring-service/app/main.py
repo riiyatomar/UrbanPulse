@@ -46,6 +46,11 @@ def process_job(job: dict):
         logger.error(f"Complaint {complaint_id} context not found in DB. Skipping.")
         return
 
+    # Check if complaint was rejected (e.g. marked as duplicate by dedup service)
+    if context.get("status") == "rejected":
+        logger.info(f"Complaint {complaint_id} is rejected (duplicate). Skipping scoring.")
+        return
+
     lat = context["lat"]
     lng = context["lng"]
 

@@ -33,7 +33,12 @@ class StorageService:
             aws_access_key_id=settings.S3_ACCESS_KEY,
             aws_secret_access_key=settings.S3_SECRET_KEY,
             region_name=settings.S3_REGION,
-            config=Config(signature_version="s3v4"),
+            config=Config(
+                signature_version="s3v4",
+                connect_timeout=3,
+                read_timeout=5,
+                retries={"max_attempts": 1},
+            ),
         )
         self._ensure_bucket_exists()
         logger.info(
@@ -41,7 +46,7 @@ class StorageService:
         )
 
     def _ensure_bucket_exists(self):
-        """Create the bucket if it doesn't exist."""
+        """Create the bucket if it doesn't exist and set public read policy for browser viewing."""
         try:
             self._client.head_bucket(Bucket=settings.S3_BUCKET)
         except ClientError:
@@ -51,6 +56,28 @@ class StorageService:
             except ClientError as e:
                 logger.error(f"Failed to create bucket: {e}")
                 raise
+
+        # Ensure public read policy so browser clients can render complaint images
+        try:
+            import json
+
+            policy = {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Sid": "PublicRead",
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": ["s3:GetObject"],
+                        "Resource": [f"arn:aws:s3:::{settings.S3_BUCKET}/*"],
+                    }
+                ],
+            }
+            self._client.put_bucket_policy(
+                Bucket=settings.S3_BUCKET, Policy=json.dumps(policy)
+            )
+        except Exception as e:
+            logger.warning(f"Could not set bucket read policy: {e}")
 
     def upload_image(
         self,

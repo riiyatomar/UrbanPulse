@@ -56,6 +56,15 @@ def process_routing_job(job: dict):
         logger.error(f"Complaint {complaint_id} not found in DB. Skipping.")
         return
 
+    # Check if complaint was rejected (e.g. marked as duplicate) or is awaiting human review
+    if complaint.get("status") == "rejected":
+        logger.info(f"Complaint {complaint_id} is rejected (duplicate). Skipping routing.")
+        return
+
+    if complaint.get("status") == "under_review":
+        logger.info(f"Complaint {complaint_id} is under_review. Awaiting human verification before routing.")
+        return
+
     issue_class = complaint["issue_class"]
     severity = complaint["severity_score"] or 5.0  # default medium
     lat = complaint["lat"]

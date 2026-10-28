@@ -51,5 +51,29 @@ class DedupQueue:
             logger.error(f"Failed to consume dedup job: {e}")
             return None
 
+    def publish_scoring_job(
+        self,
+        complaint_id: str,
+        issue_class: str,
+        confidence: float,
+        mask_area: Optional[float] = None,
+    ):
+        """
+        Publish a scoring job for a verified unique complaint.
+        Duplicates do not call this method.
+        """
+        payload = {
+            "complaint_id": complaint_id,
+            "issue_class": issue_class,
+            "confidence": confidence,
+            "job_type": "scoring",
+        }
+        if mask_area is not None:
+            payload["mask_area"] = mask_area
+
+        message = json.dumps(payload)
+        self._redis.lpush(settings.OUTPUT_QUEUE, message)
+        logger.info(f"Published scoring job for unique complaint {complaint_id} to {settings.OUTPUT_QUEUE}")
+
 
 dedup_queue = DedupQueue()

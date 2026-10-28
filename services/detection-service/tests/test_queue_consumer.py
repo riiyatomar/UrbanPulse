@@ -55,3 +55,52 @@ class TestDetectionResult:
         """YOLO and segmentation classes don't overlap."""
         overlap = set(YOLO_CLASSES) & set(SEGMENTATION_CLASSES)
         assert len(overlap) == 0, f"Overlapping classes: {overlap}"
+
+    def test_nan_confidence_raises(self):
+        """NaN confidence raises ValueError."""
+        with pytest.raises(ValueError, match="Confidence must be a finite number"):
+            DetectionResult(
+                issue_class="pothole", confidence=float("nan"), model_type="yolo"
+            )
+
+    def test_inf_confidence_raises(self):
+        """Infinite confidence raises ValueError."""
+        with pytest.raises(ValueError, match="Confidence must be a finite number"):
+            DetectionResult(
+                issue_class="pothole", confidence=float("inf"), model_type="yolo"
+            )
+
+    def test_valid_bbox(self):
+        """Valid bounding box tuple passes."""
+        result = DetectionResult(
+            issue_class="pothole", confidence=0.9, model_type="yolo", bbox=(10, 10, 50, 50)
+        )
+        assert result.bbox == (10, 10, 50, 50)
+
+    def test_invalid_bbox_raises(self):
+        """Malformed bounding box raises ValueError."""
+        with pytest.raises(ValueError, match="Bounding box"):
+            DetectionResult(
+                issue_class="pothole", confidence=0.9, model_type="yolo", bbox=(10, 20)  # only 2 elements
+            )
+
+    def test_inverted_bbox_raises(self):
+        """Inverted bounding box (x2 < x1) raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid bounding box"):
+            DetectionResult(
+                issue_class="pothole", confidence=0.9, model_type="yolo", bbox=(100, 50, 20, 50)
+            )
+
+    def test_negative_mask_area_raises(self):
+        """Negative mask area raises ValueError."""
+        with pytest.raises(ValueError, match="mask area"):
+            DetectionResult(
+                issue_class="waterlogging", confidence=0.9, model_type="segmentation", mask_area=-10.0
+            )
+
+    def test_nan_mask_area_raises(self):
+        """NaN mask area raises ValueError."""
+        with pytest.raises(ValueError, match="mask area"):
+            DetectionResult(
+                issue_class="waterlogging", confidence=0.9, model_type="segmentation", mask_area=float("nan")
+            )

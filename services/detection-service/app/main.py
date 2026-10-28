@@ -41,13 +41,19 @@ def signal_handler(signum, frame):
 
 def create_detectors():
     """Create detector instances based on configuration."""
-    if settings.MODEL_MODE == "stub":
+    mode = settings.MODEL_MODE.lower().strip()
+    if mode in ("stub", "dev", "test"):
         from app.models.stub_detector import StubDetector
 
         stub = StubDetector()
         stub.load()
         logger.info("Using stub detector (dev mode)")
         return [stub]
+
+    if mode not in ("model", "production"):
+        raise ValueError(
+            f"Invalid MODEL_MODE '{settings.MODEL_MODE}'. Allowed modes: 'stub' or 'model'."
+        )
 
     detectors = []
 
@@ -58,7 +64,7 @@ def create_detectors():
     if yolo.load():
         detectors.append(yolo)
     else:
-        logger.warning("YOLOv8 failed to load")
+        logger.warning(f"YOLOv8 failed to load from {settings.YOLO_MODEL_PATH}")
 
     # Load segmentation detector
     from app.models.segmentation import SegmentationDetector
@@ -67,15 +73,13 @@ def create_detectors():
     if seg.load():
         detectors.append(seg)
     else:
-        logger.warning("Segmentation model failed to load")
+        logger.warning(f"Segmentation model failed to load from {settings.SEG_MODEL_PATH}")
 
     if not detectors:
-        logger.error("No models loaded! Falling back to stub.")
-        from app.models.stub_detector import StubDetector
-
-        stub = StubDetector()
-        stub.load()
-        detectors.append(stub)
+        logger.error(
+            "No models loaded in 'model' mode! Real inference weights unavailable. "
+            "Incoming complaints will be routed safely to 'under_review'."
+        )
 
     return detectors
 
@@ -117,22 +121,65 @@ def process_job(job: dict, detectors: list):
     Process a single detection job.
 
     Steps:
-    1. Download image from S3
-    2. Run all detectors
-    3. Pick best detection (highest confidence)
-    4. Update complaint in database
-    5. Publish downstream jobs (scoring + dedup)
+    1. Validate job payload
+    2. Download image from S3
+    3. Run all detectors
+    4. Pick best detection (highest confidence)
+    5. Update complaint in database
+    6. Publish downstream job to dedup service
     """
+    if not isinstance(job, dict) or "complaint_id" not in job:
+        logger.error(f"Malformed detection job message: {job}")
+        return
+
     complaint_id = job["complaint_id"]
-    image_url = job["image_url"]
+    image_url = job.get("image_url")
+    if not image_url:
+        logger.error(f"Missing image_url for complaint {complaint_id}")
+        try:
+            detection_db.update_status(
+                complaint_id=complaint_id,
+                status="under_review",
+                confidence=0.0,
+            )
+        except Exception as db_err:
+            logger.error(f"Failed to update status for {complaint_id}: {db_err}")
+        return
 
     logger.info(f"Processing complaint {complaint_id}")
 
     # Step 1: Download image
     try:
         image_bytes = download_image(image_url)
+        if not image_bytes:
+            raise ValueError(f"Downloaded empty image bytes for {complaint_id}")
     except Exception as e:
         logger.error(f"Failed to download image for {complaint_id}: {e}")
+        try:
+            detection_db.update_status(
+                complaint_id=complaint_id,
+                status="under_review",
+                confidence=0.0,
+            )
+        except Exception as db_err:
+            logger.error(f"Failed to update status for {complaint_id}: {db_err}")
+        return
+
+    # Validate image bytes to catch corrupt images safely
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes))
+        img.verify()
+    except Exception as e:
+        logger.error(f"Corrupt or invalid image for {complaint_id}: {e}")
+        try:
+            detection_db.update_status(
+                complaint_id=complaint_id,
+                status="under_review",
+                confidence=0.0,
+            )
+        except Exception as db_err:
+            logger.error(f"Failed to update status for {complaint_id}: {db_err}")
         return
 
     # Step 2: Run all detectors
@@ -152,13 +199,15 @@ def process_job(job: dict, detectors: list):
     best = pick_best_detection(all_detections)
 
     if best is None or best.confidence < settings.MIN_DETECTION_THRESHOLD:
-        # No valid detection — flag for human review
-        logger.warning(f"No detection for {complaint_id}, flagging for review")
-        detection_db.update_detection(
+        # No valid detection exceeding minimum threshold — flag for human review
+        # Preserve original/default issue_class rather than forcing a fake class
+        logger.warning(
+            f"No confident detection for {complaint_id} (best={best}), flagging for review"
+        )
+        detection_db.update_status(
             complaint_id=complaint_id,
-            issue_class="pothole",  # Placeholder — reviewer will correct
-            confidence=0.0,
             status="under_review",
+            confidence=best.confidence if best else 0.0,
         )
         return
 
@@ -176,20 +225,18 @@ def process_job(job: dict, detectors: list):
         status=status,
     )
 
-    # Step 6: Publish downstream jobs
-    detection_queue.publish_scoring_job(
-        complaint_id=complaint_id,
-        issue_class=best.issue_class,
-        confidence=best.confidence,
-    )
+    # Step 6: Publish downstream job to deduplication service
     detection_queue.publish_dedup_job(
         complaint_id=complaint_id,
         image_url=image_url,
+        issue_class=best.issue_class,
+        confidence=best.confidence,
+        mask_area=best.mask_area,
     )
 
     logger.info(
         f"Completed {complaint_id}: {best.issue_class} "
-        f"({best.confidence:.3f}) → {status}"
+        f"({best.confidence:.3f}) → {status} (queued for dedup)"
     )
 
 

@@ -73,13 +73,27 @@ class DetectionQueue:
         self._redis.lpush(settings.OUTPUT_QUEUE, message)
         logger.debug(f"Published scoring job for {complaint_id}")
 
-    def publish_dedup_job(self, complaint_id: str, image_url: str):
-        """Publish a dedup job after detection."""
-        message = json.dumps({
+    def publish_dedup_job(
+        self,
+        complaint_id: str,
+        image_url: str,
+        issue_class: Optional[str] = None,
+        confidence: Optional[float] = None,
+        mask_area: Optional[float] = None,
+    ):
+        """Publish a dedup job after detection with detection context."""
+        payload = {
             "complaint_id": complaint_id,
             "image_url": image_url,
             "job_type": "dedup",
-        })
+        }
+        if issue_class is not None:
+            payload["issue_class"] = issue_class
+        if confidence is not None:
+            payload["confidence"] = confidence
+        if mask_area is not None:
+            payload["mask_area"] = mask_area
+        message = json.dumps(payload)
         self._redis.lpush(settings.DEDUP_QUEUE, message)
         logger.debug(f"Published dedup job for {complaint_id}")
 

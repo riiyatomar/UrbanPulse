@@ -57,7 +57,7 @@ class TestStubDetector:
         # Generate many different images
         results = set()
         for i in range(50):
-            img = create_test_image(color=f"#{i*5:02x}{i*3:02x}{i*7:02x}")
+            img = create_test_image(color=((i * 5) % 256, (i * 3) % 256, (i * 7) % 256))
             detection = detector.detect(img)
             results.add(detection[0].issue_class)
         # Should produce at least 2 different classes across 50 images

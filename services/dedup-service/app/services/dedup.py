@@ -25,6 +25,7 @@ class DedupService:
         image_bytes: bytes,
         lat: float,
         lng: float,
+        embedding: Optional[list[float]] = None,
     ) -> Tuple[bool, Optional[str], float]:
         """
         Check if a complaint has a duplicate within the radius and time window.
@@ -32,8 +33,9 @@ class DedupService:
         Returns:
             Tuple of (is_duplicate, matched_complaint_id, similarity_score)
         """
-        # 1. Compute embedding
-        embedding = embedding_service.compute_embedding(image_bytes)
+        # 1. Compute embedding if not provided
+        if embedding is None:
+            embedding = embedding_service.compute_embedding(image_bytes)
 
         # 2. Query nearest neighbors in vector store
         neighbors = vector_store.find_nearest_neighbors(
@@ -69,23 +71,25 @@ class DedupService:
     ) -> bool:
         """
         Executes duplicate detection lifecycle.
+        - Computes embedding once
         - Checks for duplicates
         - If duplicate, updates status to 'rejected'
-        - If unique, generates and saves the embedding and geohash
+        - If unique, saves the computed embedding and geohash (no redundant inference)
         """
+        embedding = embedding_service.compute_embedding(image_bytes)
+
         is_duplicate, matched_id, score = self.check_duplicate(
-            complaint_id, image_bytes, lat, lng
+            complaint_id, image_bytes, lat, lng, embedding=embedding
         )
 
         geohash = encode_geohash(lat, lng, settings.GEOHASH_PRECISION)
 
         if is_duplicate:
-            # Mark complaint as rejected
-            dedup_db.reject_as_duplicate(complaint_id)
+            # Mark complaint as rejected with reference to original complaint
+            dedup_db.reject_as_duplicate(complaint_id, duplicate_of_id=matched_id)
             return True
         else:
-            # Not a duplicate, compute and store embedding
-            embedding = embedding_service.compute_embedding(image_bytes)
+            # Not a duplicate, reuse the already computed embedding
             dedup_db.insert_embedding(complaint_id, embedding, geohash)
             return False
 

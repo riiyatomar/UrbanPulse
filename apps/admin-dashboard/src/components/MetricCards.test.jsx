@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
 import MetricCards from './MetricCards';
 
 // Simple unit tests for MetricCards calculation logic

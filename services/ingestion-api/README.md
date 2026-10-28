@@ -148,3 +148,33 @@ ingestion-api/
 ├── requirements.txt
 └── README.md
 ```
+
+1. Start Infrastructure (Docker)
+cd c:\Users\HP\UrbanPulse
+docker compose up -d
+
+2. Start All Backend Services
+cd c:\Users\HP\UrbanPulse
+.\start_backend.bat
+
+3. Start Admin Dashboard
+cd c:\Users\HP\UrbanPulse\apps\admin-dashboard
+npm install
+npm run dev
+
+4. Start Citizen Mobile App
+cd c:\Users\HP\UrbanPulse\apps\citizen-app
+npm install
+npm run start
+
+
+Component	URL
+Ingestion API	http://localhost:8006
+Admin Dashboard	http://localhost:8083
+Citizen App	http://localhost:8081
+
+
+
+🔑 Admin Credentials
+Email: admin@urbanpulse.local
+Password: Admin@12345

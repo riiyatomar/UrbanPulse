@@ -72,37 +72,58 @@ class DedupDB:
                 )
                 logger.info(f"Stored embedding for complaint {complaint_id}")
 
-    def reject_as_duplicate(self, complaint_id: str):
+    def reject_as_duplicate(self, complaint_id: str, duplicate_of_id: Optional[str] = None):
         """
         Mark a complaint as rejected since it's a duplicate.
         """
         with self.get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE complaints
-                    SET status = 'rejected'::complaint_status,
-                        closed_at = NOW(),
-                        updated_at = NOW()
-                    WHERE id = %s::uuid
-                    """,
-                    (complaint_id,),
-                )
-                logger.info(f"Rejected duplicate complaint {complaint_id}")
+                if duplicate_of_id:
+                    cur.execute(
+                        """
+                        UPDATE complaints
+                        SET status = 'rejected'::complaint_status,
+                            duplicate_of_id = %s::uuid,
+                            closed_at = NOW(),
+                            updated_at = NOW()
+                        WHERE id = %s::uuid
+                        """,
+                        (duplicate_of_id, complaint_id),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE complaints
+                        SET status = 'rejected'::complaint_status,
+                            closed_at = NOW(),
+                            updated_at = NOW()
+                        WHERE id = %s::uuid
+                        """,
+                        (complaint_id,),
+                    )
+                logger.info(f"Rejected duplicate complaint {complaint_id} (duplicate_of={duplicate_of_id})")
 
     def get_complaint_location(self, complaint_id: str) -> Optional[dict]:
-        """Get complaint coordinates and date."""
+        """Get complaint coordinates, date, issue class, and status."""
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT lat, lng, created_at FROM complaints WHERE id = %s::uuid
+                    SELECT lat, lng, created_at, issue_class, confidence, status
+                    FROM complaints WHERE id = %s::uuid
                     """,
                     (complaint_id,),
                 )
                 row = cur.fetchone()
                 if row:
-                    return {"lat": row[0], "lng": row[1], "created_at": row[2]}
+                    return {
+                        "lat": row[0],
+                        "lng": row[1],
+                        "created_at": row[2],
+                        "issue_class": row[3],
+                        "confidence": float(row[4]) if row[4] is not None else 0.0,
+                        "status": row[5],
+                    }
                 return None
 
 

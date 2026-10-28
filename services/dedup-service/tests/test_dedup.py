@@ -102,7 +102,7 @@ def test_duplicate_rejects_complaint(test_image_bytes, mock_db, mock_vector_stor
         )
 
         assert res is True  # returns True indicating duplicate was resolved
-        mock_db.reject_as_duplicate.assert_called_once_with("new-complaint-id")
+        mock_db.reject_as_duplicate.assert_called_once_with("new-complaint-id", duplicate_of_id="matched-id-uuid-1")
         mock_db.insert_embedding.assert_not_called()
 
 
@@ -125,7 +125,59 @@ def test_unique_saves_embedding(test_image_bytes, mock_db, mock_vector_store):
         assert res is False  # unique complaint
         mock_db.reject_as_duplicate.assert_not_called()
         mock_db.insert_embedding.assert_called_once()
-        # Verify geohash precision length matches precision (7)
         args, kwargs = mock_db.insert_embedding.call_args
         assert args[0] == "new-complaint-id"
         assert len(args[2]) == 7  # geohash precision
+
+
+def test_embedding_computed_only_once_for_unique_complaint(test_image_bytes, mock_db, mock_vector_store):
+    """
+    Verify that compute_embedding is called exactly once (no redundant second inference pass).
+    """
+    mock_vector_store.find_nearest_neighbors.return_value = []
+
+    with patch("app.services.dedup.vector_store", mock_vector_store), \
+         patch("app.services.dedup.dedup_db", mock_db), \
+         patch("app.services.dedup.embedding_service") as mock_emb:
+        mock_emb.compute_embedding.return_value = [0.1] * 512
+
+        res = dedup_service.process_complaint_dedup(
+            complaint_id="new-complaint-id",
+            image_bytes=test_image_bytes,
+            lat=28.6139,
+            lng=77.2090,
+        )
+
+        assert res is False
+        assert mock_emb.compute_embedding.call_count == 1
+
+
+def test_reused_embedding_passed_to_search_and_insert(test_image_bytes, mock_db, mock_vector_store):
+    """
+    Verify that the exact same embedding instance computed is passed to vector_store and insert_embedding.
+    """
+    mock_vector_store.find_nearest_neighbors.return_value = []
+    fixed_vector = [0.042] * 512
+
+    with patch("app.services.dedup.vector_store", mock_vector_store), \
+         patch("app.services.dedup.dedup_db", mock_db), \
+         patch("app.services.dedup.embedding_service") as mock_emb:
+        mock_emb.compute_embedding.return_value = fixed_vector
+
+        res = dedup_service.process_complaint_dedup(
+            complaint_id="reuse-test-id",
+            image_bytes=test_image_bytes,
+            lat=28.6139,
+            lng=77.2090,
+        )
+
+        assert res is False
+        # Verify vector_store received fixed_vector
+        vector_call_kwargs = mock_vector_store.find_nearest_neighbors.call_args.kwargs
+        assert vector_call_kwargs["embedding"] == fixed_vector
+
+        # Verify db insert received fixed_vector
+        db_call_args = mock_db.insert_embedding.call_args[0]
+        assert db_call_args[1] == fixed_vector
+
+

@@ -50,8 +50,10 @@ class YOLODetector(BaseDetector):
             from PIL import Image
             import numpy as np
 
-            image = Image.open(io.BytesIO(image_bytes))
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             img_array = np.array(image)
+
+            import math
 
             results = self._model(img_array, verbose=False)
             detections = []
@@ -60,23 +62,35 @@ class YOLODetector(BaseDetector):
                 if result.boxes is None:
                     continue
                 for box in result.boxes:
-                    cls_id = int(box.cls[0])
-                    confidence = float(box.conf[0])
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    try:
+                        cls_id = int(box.cls[0])
+                        confidence = float(box.conf[0])
+                        if not math.isfinite(confidence) or not (0.0 <= confidence <= 1.0):
+                            continue
 
-                    issue_class = self._class_map.get(cls_id)
-                    if issue_class is None:
-                        logger.warning(f"Unknown class ID {cls_id} from YOLO")
-                        continue
+                        raw_coords = tuple(map(float, box.xyxy[0]))
+                        if not all(math.isfinite(c) for c in raw_coords):
+                            continue
+                        x1, y1, x2, y2 = map(int, raw_coords)
+                        if x2 < x1 or y2 < y1:
+                            continue
 
-                    detections.append(
-                        DetectionResult(
-                            issue_class=issue_class,
-                            confidence=confidence,
-                            model_type="yolo",
-                            bbox=(x1, y1, x2, y2),
+                        issue_class = self._class_map.get(cls_id)
+                        if issue_class is None:
+                            logger.warning(f"Unknown class ID {cls_id} from YOLO")
+                            continue
+
+                        detections.append(
+                            DetectionResult(
+                                issue_class=issue_class,
+                                confidence=round(confidence, 4),
+                                model_type="yolo",
+                                bbox=(x1, y1, x2, y2),
+                            )
                         )
-                    )
+                    except Exception as box_err:
+                        logger.warning(f"Error parsing YOLO box: {box_err}")
+                        continue
 
             logger.info(f"YOLOv8: {len(detections)} detections")
             return detections

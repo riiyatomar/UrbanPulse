@@ -318,3 +318,33 @@ npm run dev
 FOURTH: cd apps/citizen-app
 npm install
 npm run start -->
+
+
+<!-- 
+6. ACTUAL LOCAL URLS
+Backend (Ingestion API): http://localhost:8006
+Admin Dashboard: http://localhost:8083
+Citizen App: http://localhost:8081
+
+7. STARTUP COMMANDS
+
+docker:
+docker compose up
+
+Backend:
+cd c:\Users\HP\UrbanPulse\services\ingestion-api
+.\venv\Scripts\uvicorn 
+app.main:app --port 8006 --host 0.0.0.0
+
+Admin Dashboard:
+cd c:\Users\HP\UrbanPulse\apps\admin-dashboard
+npm run dev
+
+Citizen App:
+
+npm run start
+
+<!-- 3. ACTUAL ADMIN CREDENTIALS
+
+Email/User ID: admin@urbanpulse.local
+Password: Admin@12345 -->

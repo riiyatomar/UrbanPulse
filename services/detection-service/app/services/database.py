@@ -89,6 +89,48 @@ class DetectionDB:
                         f"class={issue_class}, conf={confidence:.3f}, status={status}"
                     )
 
+    def update_status(
+        self,
+        complaint_id: str,
+        status: str,
+        confidence: Optional[float] = None,
+    ):
+        """
+        Update complaint status and optionally confidence without altering issue_class.
+
+        Used when model detection is inconclusive, fails, or requires human review,
+        preserving the original or default issue_class.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                if confidence is not None:
+                    cur.execute(
+                        """
+                        UPDATE complaints
+                        SET status = %s::complaint_status,
+                            confidence = %s,
+                            updated_at = NOW()
+                        WHERE id = %s::uuid
+                        """,
+                        (status, confidence, complaint_id),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE complaints
+                        SET status = %s::complaint_status,
+                            updated_at = NOW()
+                        WHERE id = %s::uuid
+                        """,
+                        (status, complaint_id),
+                    )
+                if cur.rowcount == 0:
+                    logger.warning(f"No complaint found with ID {complaint_id}")
+                else:
+                    logger.info(
+                        f"Updated complaint {complaint_id} status to {status}"
+                    )
+
     def get_complaint(self, complaint_id: str) -> Optional[dict]:
         """Fetch a complaint by ID (for verification/logging)."""
         with self.get_connection() as conn:

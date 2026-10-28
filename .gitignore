@@ -1,0 +1,48 @@
+# Environment files (contain secrets)
+.env
+.env.local
+.env.production
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python virtual environments
+venv/
+.venv/
+
+# Test coverage
+htmlcov/
+.coverage
+
+# Large archives and datasets
+*.tar
+*.tar.gz
+*.zip
+datasets/
+training/
+
+# Model weights
+*.pt
+*.pth
+*.onnx
+*.h5
+*.tflite

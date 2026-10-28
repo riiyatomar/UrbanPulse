@@ -50,6 +50,10 @@ class Settings(BaseSettings):
         default="dedup_jobs",
         description="Queue to pull dedup check jobs from",
     )
+    OUTPUT_QUEUE: str = Field(
+        default="scoring_jobs",
+        description="Queue to publish scoring jobs to for unique complaints",
+    )
 
     # --- S3 Configuration ---
     S3_ENDPOINT: str = Field(default="http://localhost:9000")

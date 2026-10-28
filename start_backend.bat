@@ -94,8 +94,8 @@ echo.
 :: 4. Launch services (consolidated: 3 windows instead of 7)
 echo [4/4] Launching backend microservices...
 
-:: Ingestion API (Port 8001) — main HTTP API
-start "UrbanPulse Ingestion API" cmd /k "cd services\ingestion-api && venv\Scripts\activate && uvicorn app.main:app --port 8001 --host 0.0.0.0"
+:: Ingestion API (Port 8006) — main HTTP API
+start "UrbanPulse Ingestion API" cmd /k "cd services\ingestion-api && venv\Scripts\activate && uvicorn app.main:app --port 8006 --host 0.0.0.0"
 
 :: Verification API (Port 8002) — repair verification HTTP API
 start "UrbanPulse Verification API" cmd /k "cd services\verification-service && venv\Scripts\activate && uvicorn app.main:app --port 8002 --host 0.0.0.0"

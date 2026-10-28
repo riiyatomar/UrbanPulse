@@ -54,11 +54,54 @@ class Settings(BaseSettings):
         default="stub",
         description="Blur mode: 'model' (production) or 'stub' (dev/testing)",
     )
+    FACE_MODEL_PATH: str = Field(
+        default="yolov8n-face.pt",
+        description="Path to face detection YOLO weights",
+    )
+    PLATE_MODEL_PATH: str = Field(
+        default="yolov8n-plate.pt",
+        description="Path to license plate detection YOLO weights",
+    )
 
     # --- Detection ---
     CONFIDENCE_THRESHOLD: float = Field(
         default=0.4,
         description="Detections below this confidence go to human review queue",
+    )
+
+    # --- Authentication ---
+    JWT_SECRET_KEY: str = Field(
+        ...,
+        description="JWT signing secret (REQUIRED — no default, must be set via env)",
+    )
+    JWT_EXPIRATION_MINUTES: int = Field(
+        default=480, description="Access token expiry in minutes (default: 8 hours)"
+    )
+    JWT_ALGORITHM: str = Field(
+        default="HS256", description="JWT signing algorithm"
+    )
+
+    # --- CORS ---
+    CORS_ORIGINS: str = Field(
+        default="http://localhost:5173,http://localhost:8080,http://localhost:8081,http://localhost:8082,http://localhost:8083,http://localhost:8084,http://localhost:19006,http://127.0.0.1:5173,http://127.0.0.1:8080,http://127.0.0.1:8081,http://127.0.0.1:8082,http://127.0.0.1:8083,http://127.0.0.1:8084,http://127.0.0.1:19006",
+        description="Comma-separated allowed CORS origins",
+    )
+
+
+    # --- Rate Limiting ---
+    LOGIN_RATE_LIMIT_PER_MINUTE: int = Field(
+        default=10, description="Max login attempts per IP per minute"
+    )
+
+    # --- Bootstrap Admin ---
+    BOOTSTRAP_ADMIN_EMAIL: str = Field(
+        default="", description="Bootstrap admin email (created on first startup if set)"
+    )
+    BOOTSTRAP_ADMIN_PASSWORD: str = Field(
+        default="", description="Bootstrap admin password (hashed on first use, never stored raw)"
+    )
+    BOOTSTRAP_ADMIN_NAME: str = Field(
+        default="System Administrator", description="Bootstrap admin display name"
     )
 
     # --- Server ---

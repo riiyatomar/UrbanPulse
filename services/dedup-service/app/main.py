@@ -52,17 +52,32 @@ def download_image(image_url: str) -> bytes:
 def process_job(job: dict):
     """
     Process a single deduplication job:
-    1. Fetch complaint location from database.
-    2. Download image from S3.
-    3. Run dedup check and status updates.
+    1. Validate job payload.
+    2. Fetch complaint location and metadata from database.
+    3. Download image from S3.
+    4. Run dedup check and status updates.
+    5. If unique, publish downstream scoring job.
+       If duplicate, reject and SKIP scoring.
     """
-    complaint_id = job["complaint_id"]
-    image_url = job["image_url"]
+    if not isinstance(job, dict) or "complaint_id" not in job:
+        logger.error(f"Malformed deduplication job message: {job}")
+        return
 
-    # 1. Fetch location from database
+    complaint_id = job["complaint_id"]
+    image_url = job.get("image_url")
+    if not image_url:
+        logger.error(f"Missing image_url in dedup job for {complaint_id}")
+        return
+
+    # 1. Fetch location & metadata from database
     location = dedup_db.get_complaint_location(complaint_id)
     if not location:
         logger.error(f"Complaint {complaint_id} not found in database. Skipping.")
+        return
+
+    # If already rejected, skip
+    if location.get("status") == "rejected":
+        logger.info(f"Complaint {complaint_id} is already rejected. Skipping dedup.")
         return
 
     lat = location["lat"]
@@ -71,19 +86,39 @@ def process_job(job: dict):
     # 2. Download original image
     try:
         image_bytes = download_image(image_url)
+        if not image_bytes:
+            raise ValueError("Empty image bytes downloaded")
     except Exception as e:
         logger.error(f"Failed to download image for dedup check on {complaint_id}: {e}")
         return
 
     # 3. Check for duplicates and resolve
-    is_duplicate = dedup_service.process_complaint_dedup(
-        complaint_id, image_bytes, lat, lng
-    )
+    try:
+        is_duplicate = dedup_service.process_complaint_dedup(
+            complaint_id, image_bytes, lat, lng
+        )
+    except Exception as e:
+        logger.error(f"Failed dedup processing for {complaint_id}: {e}", exc_info=True)
+        return
 
     if is_duplicate:
-        logger.info(f"Resolved duplicate complaint {complaint_id} -> status: REJECTED")
+        logger.info(f"Resolved duplicate complaint {complaint_id} -> status: REJECTED (scoring SKIPPED)")
     else:
         logger.info(f"Complaint {complaint_id} is UNIQUE -> embedding and geohash stored")
+        # Step 5: Publish scoring job for unique complaints
+        issue_class = job.get("issue_class") or location.get("issue_class")
+        confidence = job.get("confidence") if job.get("confidence") is not None else location.get("confidence", 0.0)
+        mask_area = job.get("mask_area")
+
+        if issue_class:
+            dedup_queue.publish_scoring_job(
+                complaint_id=complaint_id,
+                issue_class=issue_class,
+                confidence=confidence,
+                mask_area=mask_area,
+            )
+        else:
+            logger.warning(f"No issue_class found for complaint {complaint_id}; skipping scoring publish")
 
 
 def main():

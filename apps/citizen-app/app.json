@@ -7,7 +7,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "UrbanPulse requires camera access to capture photos of civic issues.",
+        "NSLocationWhenInUseUsageDescription": "UrbanPulse uses your location to accurately map the civic issue you report."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -15,10 +19,29 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "UrbanPulse requires camera access to capture photos of civic issues."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "UrbanPulse uses your location to accurately map the civic issue you report."
+        }
+      ]
+    ]
   }
 }

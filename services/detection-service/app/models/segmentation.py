@@ -52,7 +52,7 @@ class SegmentationDetector(BaseDetector):
             from PIL import Image
             import numpy as np
 
-            image = Image.open(io.BytesIO(image_bytes))
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             img_array = np.array(image)
             total_pixels = img_array.shape[0] * img_array.shape[1]
 
@@ -64,8 +64,19 @@ class SegmentationDetector(BaseDetector):
                     continue
 
                 for i, mask in enumerate(result.masks):
-                    cls_id = int(result.boxes.cls[i]) if result.boxes is not None else i
-                    confidence = float(result.boxes.conf[i]) if result.boxes is not None else 0.5
+                    cls_id = None
+                    confidence = 0.5
+                    if (
+                        result.boxes is not None
+                        and getattr(result.boxes, "cls", None) is not None
+                        and len(result.boxes.cls) > i
+                    ):
+                        try:
+                            cls_id = int(result.boxes.cls[i])
+                        except Exception:
+                            cls_id = i
+                    else:
+                        cls_id = i
 
                     issue_class = self._class_map.get(cls_id)
                     if issue_class is None:
@@ -76,10 +87,26 @@ class SegmentationDetector(BaseDetector):
                     mask_data = mask.data.cpu().numpy()
                     mask_area = float(np.sum(mask_data > 0.5))
 
+                    if (
+                        result.boxes is not None
+                        and getattr(result.boxes, "conf", None) is not None
+                        and len(result.boxes.conf) > i
+                    ):
+                        try:
+                            conf_val = float(result.boxes.conf[i])
+                            if 0.0 <= conf_val <= 1.0:
+                                confidence = conf_val
+                            else:
+                                confidence = min(1.0, max(0.0, mask_area / max(1, total_pixels)))
+                        except Exception:
+                            confidence = min(1.0, max(0.0, mask_area / max(1, total_pixels)))
+                    else:
+                        confidence = min(1.0, max(0.0, mask_area / max(1, total_pixels)))
+
                     detections.append(
                         DetectionResult(
                             issue_class=issue_class,
-                            confidence=confidence,
+                            confidence=round(confidence, 4),
                             model_type="segmentation",
                             mask_area=mask_area,
                         )
